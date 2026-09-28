@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Laminate Bench: hand-tracked AR layup explorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --mat:#2f5d50; --mat-line:rgba(255,255,255,0.10); --mat-line-strong:rgba(255,255,255,0.22);
+  --paper:#f3f5f2; --ink:#1c2420; --ink-soft:#56615b; --rule:#cfd6d1;
+  --accent:#c2412d; --field:#ffffff; --focus:#1f6fb2;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --mat:#1f3d35; --mat-line:rgba(255,255,255,0.07); --mat-line-strong:rgba(255,255,255,0.16);
+    --paper:#151b18; --ink:#e4ebe6; --ink-soft:#9aa8a0; --rule:#2c3631;
+    --accent:#e0694f; --field:#1d2521; --focus:#6fb0e8;
+  }
+}
+:root[data-theme="dark"]{
+  --mat:#1f3d35; --mat-line:rgba(255,255,255,0.07); --mat-line-strong:rgba(255,255,255,0.16);
+  --paper:#151b18; --ink:#e4ebe6; --ink-soft:#9aa8a0; --rule:#2c3631;
+  --accent:#e0694f; --field:#1d2521; --focus:#6fb0e8;
+}
+*,*::before,*::after{ box-sizing:inherit; }
+html{ height:100%; scroll-padding-top:env(safe-area-inset-top,0px); }
+body{
+  margin:0; height:100%; background:var(--paper); color:var(--ink);
+  font-family:'Barlow', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size:15px; line-height:1.45;
+  display:flex; overflow:hidden;
+}
+#stage{
+  position:relative; flex:1 1 auto; min-width:0; height:100%;
+  background-color:var(--mat);
+  background-image:
+    linear-gradient(var(--mat-line-strong) 1px, transparent 1px),
+    linear-gradient(90deg, var(--mat-line-strong) 1px, transparent 1px),
+    linear-gradient(var(--mat-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--mat-line) 1px, transparent 1px);
+  background-size:100px 100px,100px 100px,20px 20px,20px 20px;
+}
+#stage canvas{ display:block; width:100%; height:100%; touch-action:none; }
+#stageHint{
+  position:absolute; left:16px; bottom:14px; color:rgba(255,255,255,0.78); font-size:13px; pointer-events:none;
+}
+#legend{ position:absolute; left:16px; top:14px; display:flex; gap:12px; flex-wrap:wrap; pointer-events:none; }
+#legend span{ display:inline-flex; align-items:center; gap:6px; color:#fff; font-size:13px; }
+#legend i{ width:14px; height:14px; border-radius:2px; display:inline-block; }
+
+#panel{
+  flex:0 0 400px; height:100%; overflow-y:auto; border-left:1px solid var(--rule);
+  padding:22px 24px 40px;
+}
+h1{ font-family:'Barlow Condensed','Arial Narrow',sans-serif; font-weight:600; font-size:34px; line-height:1.05; margin:0 0 6px; letter-spacing:0.005em; }
+.lede{ color:var(--ink-soft); margin:0 0 20px; max-width:34em; }
+h2{ font-family:'Barlow Condensed','Arial Narrow',sans-serif; font-weight:600; font-size:19px; margin:24px 0 8px; }
+label{ font-weight:500; }
+.row{ display:flex; gap:8px; }
+input[type=text], select{
+  font:inherit; color:var(--ink); background:var(--field); border:1px solid var(--rule); border-radius:4px;
+  padding:8px 10px; width:100%; min-width:0;
+}
+input[type=text]{ font-variant-numeric:tabular-nums; letter-spacing:0.02em; }
+button{
+  font:inherit; font-weight:600; color:var(--ink); background:transparent; border:1px solid var(--ink);
+  border-radius:4px; padding:8px 14px; cursor:pointer; white-space:nowrap;
+}
+button.primary{ background:var(--ink); color:var(--paper); }
+:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
+#err{ color:var(--accent); font-size:13px; min-height:18px; margin-top:4px; }
+.presets{ display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.presets button{ font-weight:500; text-align:left; padding:7px 10px; border-color:var(--rule); white-space:normal; line-height:1.25; }
+.presets button small{ display:block; color:var(--ink-soft); font-size:12px; }
+.presets button[aria-pressed="true"]{ border-color:var(--ink); box-shadow:inset 3px 0 0 var(--accent); }
+.field{ margin:10px 0; }
+.field label{ display:block; margin-bottom:4px; }
+input[type=range]{ width:100%; accent-color:var(--accent); }
+table{ border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
+.props td{ padding:5px 0; border-bottom:1px solid var(--rule); }
+.props td:last-child{ text-align:right; font-weight:600; }
+.flag{ margin:8px 0 0; padding-left:10px; border-left:3px solid var(--rule); font-size:14px; }
+.flag.warn{ border-left-color:var(--accent); }
+.mat3{ font-size:12.5px; margin:4px 0 12px; }
+.mat3 td{ padding:3px 6px; text-align:right; border:1px solid var(--rule); }
+.mat3 caption{ text-align:left; font-weight:500; font-size:13.5px; padding-bottom:3px; }
+.note{ color:var(--ink-soft); font-size:13px; margin-top:6px; }
+#arBtn[disabled]{ opacity:0.45; cursor:not-allowed; }
+#arHint{ display:none; }
+
+body.ar-mode{ background:transparent !important; }
+body.ar-mode #stage{ background:transparent !important; }
+body.ar-mode #panel, body.ar-mode #stageHint, body.ar-mode #legend{ display:none; }
+body.ar-mode #arHint{
+  display:block; position:absolute; left:50%; bottom:24px; transform:translateX(-50%);
+  background:rgba(20,28,24,0.7); color:#fff; padding:8px 14px; border-radius:6px; font-size:14px;
+}
+
+@media (max-width: 820px){
+  body{ flex-direction:column; overflow:auto; height:auto; }
+  html{ height:auto; }
+  #stage{ height:56vh; flex:none; }
+  #panel{ flex:none; height:auto; border-left:none; border-top:1px solid var(--rule); }
+}
+@media (prefers-reduced-motion: reduce){ *{ transition:none !important; } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="legend">
+    <span><i style="background:#d9534f"></i>0°</span>
+    <span><i style="background:#e8a33d"></i>+45°</span>
+    <span><i style="background:#4fa56b"></i>−45°</span>
+    <span><i style="background:#3b82c4"></i>90°</span>
+  </div>
+  <div id="stageHint">Drag to orbit, scroll to zoom. The ring under the stack plots Ex against loading angle.</div>
+  <div id="arHint">Type on the floating keyboard with your fingertip. Pinch the laminate to move it, or both hands to scale and turn.</div>
+</div>
+
+<aside id="panel">
+  <h1>Laminate Bench</h1>
+  <p class="lede">Type a stacking sequence and see each ply, its fiber direction, and how the laminate's in-plane stiffness changes with loading angle. Everything is computed live with classical lamination theory.</p>
+
+  <div class="field">
+    <label for="layup">Stacking sequence</label>
+    <div class="row">
+      <input id="layup" type="text" value="[0/±45/90]s" spellcheck="false" autocomplete="off" aria-describedby="err layupHelp">
+      <button id="buildBtn" class="primary">Build</button>
+    </div>
+    <div id="err" role="alert"></div>
+    <div class="note" id="layupHelp">Examples: [0/90]2s, [±30/0]s, 0,45,-45,90. Use ± for paired plies and a trailing s for symmetric.</div>
+  </div>
+
+  <h2>Reference laminates</h2>
+  <div class="presets" id="presets"></div>
+
+  <div class="field">
+    <label for="material">Ply material</label>
+    <select id="material"></select>
+  </div>
+  <div class="field">
+    <label for="explode">Ply spacing</label>
+    <input id="explode" type="range" min="0" max="1" step="0.01" value="0.7">
+  </div>
+  <div class="field">
+    <label><input id="narrate" type="checkbox" checked> Read a short note aloud when the laminate changes</label>
+  </div>
+
+  <h2>Effective in-plane properties</h2>
+  <table class="props" id="props"></table>
+  <div id="flags"></div>
+
+  <h2>ABD stiffness</h2>
+  <div id="abd"></div>
+  <p class="note">A in MN/m, B in kN, D in N·m. Effective moduli use the membrane compliance A⁻¹, so for unsymmetric laminates they assume bending is restrained.</p>
+
+  <h2>View on a headset</h2>
+  <button id="arBtn" disabled>Checking for AR support</button>
+  <p class="note">On Meta Quest, turn on hand tracking in Settings, Movement Tracking, then open this page in the Quest browser. The laminate appears half a metre in front of you with a keyboard below it. Press keys with your index fingertip to type a new layup, then press Build. Pinch both hands away from the laminate at once to bring everything back in front.</p>
+</aside>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// CLT-BEGIN
+const MATERIALS = {
+  carbon: { label:'Carbon/epoxy (T300/5208)', E1:181, E2:10.3, G12:7.17, v12:0.28, t:0.125 },
+  glass:  { label:'E-glass/epoxy',            E1:38.6, E2:8.27, G12:4.14, v12:0.26, t:0.125 },
+  aramid: { label:'Aramid/epoxy (Kevlar 49)', E1:76,   E2:5.5,  G12:2.3,  v12:0.34, t:0.125 },
+};
+
+function parseLayup(str){
+  let s = String(str).replace(/\s+/g,'').replace(/°/g,'')
+    .replace(/\+\/-|\+-/g,'±').replace(/-\/\+|-\+/g,'∓').replace(/[−–]/g,'-');
+  if (!s) throw new Error('Enter a stacking sequence, for example [0/90]s.');
+  let body = s, rep = 1, sym = false;
+  const m = s.match(/^\[(.+)\]_?(\d*)([sS]?)$/);
+  if (m){ body = m[1]; rep = m[2] ? parseInt(m[2],10) : 1; sym = !!m[3]; }
+  else if (/[\[\]]/.test(s)) throw new Error('Brackets look unbalanced. Try a form like [0/±45/90]s.');
+  const tokens = body.split(/[\/,]/).filter(Boolean);
+  if (!tokens.length) throw new Error('No ply angles found between the brackets.');
+  let seq = [];
+  for (const tok of tokens){
+    const t = tok.match(/^([±∓]?)([+-]?\d+(?:\.\d+)?)(?:_?\((\d+)\)|_(\d+))?$/);
+    if (!t) throw new Error(`"${tok}" is not a ply angle. Use numbers like 0, 45, -45, ±30 or 0_2.`);
+    const a = parseFloat(t[2]); const n = parseInt(t[3]||t[4]||'1',10);
+    const unit = t[1]==='±' ? [a,-a] : t[1]==='∓' ? [-a,a] : [a];
+    for (let i=0;i<n;i++) seq.push(...unit);
+  }
+  let out = [];
+  for (let r=0;r<rep;r++) out.push(...seq);
+  if (sym) out = out.concat(out.slice().reverse());
+  out = out.map(normAngle);
+  if (out.length > 48) throw new Error(`That is ${out.length} plies. Keep it to 48 or fewer.`);
+  return out;
+}
+function normAngle(a){ let x = ((a % 180) + 180) % 180; if (x > 90) x -= 180; return Math.round(x*100)/100; }
+
+function Qmat(m){
+  const v21 = m.v12*m.E2/m.E1, d = 1 - m.v12*v21;
+  return { Q11:m.E1/d, Q22:m.E2/d, Q12:m.v12*m.E2/d, Q66:m.G12 };
+}
+function Qbar(Q, deg){
+  const r = deg*Math.PI/180, c = Math.cos(r), s = Math.sin(r);
+  const c2=c*c, s2=s*s, c4=c2*c2, s4=s2*s2, sc=s*c;
+  const {Q11,Q22,Q12,Q66} = Q;
+  const b11 = Q11*c4 + 2*(Q12+2*Q66)*s2*c2 + Q22*s4;
+  const b22 = Q11*s4 + 2*(Q12+2*Q66)*s2*c2 + Q22*c4;
+  const b12 = (Q11+Q22-4*Q66)*s2*c2 + Q12*(s4+c4);
+  const b66 = (Q11+Q22-2*Q12-2*Q66)*s2*c2 + Q66*(s4+c4);
+  const b16 = (Q11-Q12-2*Q66)*sc*c2 + (Q12-Q22+2*Q66)*s2*sc;
+  const b26 = (Q11-Q12-2*Q66)*s2*sc + (Q12-Q22+2*Q66)*sc*c2;
+  return [[b11,b12,b16],[b12,b22,b26],[b16,b26,b66]];
+}
+function zeros(){ return [[0,0,0],[0,0,0],[0,0,0]]; }
+function abd(mat, angles){
+  const Q = Qmat(mat), t = mat.t, n = angles.length, h = n*t;
+  const A=zeros(), B=zeros(), D=zeros();
+  for (let k=0;k<n;k++){
+    const z0 = -h/2 + k*t, z1 = z0 + t, qb = Qbar(Q, angles[k]);
+    for (let i=0;i<3;i++) for (let j=0;j<3;j++){
+      A[i][j] += qb[i][j]*(z1-z0);
+      B[i][j] += qb[i][j]*(z1*z1-z0*z0)/2;
+      D[i][j] += qb[i][j]*(z1*z1*z1-z0*z0*z0)/3;
+    }
+  }
+  return { A, B, D, h };
+}
+function inv3(M){
+  const [a,b,c]=M[0],[d,e,f]=M[1],[g,h,i]=M[2];
+  const A=e*i-f*h, B=-(d*i-f*g), C=d*h-e*g, det=a*A+b*B+c*C;
+  return [[A/det, -(b*i-c*h)/det, (b*f-c*e)/det],
+          [B/det, (a*i-c*g)/det, -(a*f-c*d)/det],
+          [C/det, -(a*h-b*g)/det, (a*e-b*d)/det]];
+}
+function effective(A, h){
+  const a = inv3(A);
+  return { Ex:1/(h*a[0][0]), Ey:1/(h*a[1][1]), Gxy:1/(h*a[2][2]), vxy:-a[0][1]/a[0][0] };
+}
+function polarEx(mat, angles, step=3){
+  const pts = [];
+  for (let phi=0; phi<360; phi+=step){
+    const r = abd(mat, angles.map(a=>a-phi));
+    pts.push({ phi, E: effective(r.A, r.h).Ex });
+  }
+  return pts;
+}
+function analyse(mat, angles){
+  const r = abd(mat, angles), e = effective(r.A, r.h);
+  const n = angles.length;
+  const symmetric = angles.every((a,i)=>Math.abs(a-angles[n-1-i])<1e-9);
+  const balanced = Math.abs(r.A[0][2]) < 1e-6*r.A[0][0] && Math.abs(r.A[1][2]) < 1e-6*r.A[0][0];
+  return { ...r, ...e, symmetric, balanced, n };
+}
+// CLT-END
+
+const PRESETS = [
+  { name:'Unidirectional', code:'[0]8',
+    note:'All fibers point one way. Stiffness along the fibers is many times higher than across them, so it suits spar caps and tension straps, but it is weak under off-axis load.' },
+  { name:'Cross-ply', code:'[0/90]2s',
+    note:'Equal stiffness at zero and ninety degrees. Look at the polar plot: it pinches at forty-five degrees, because no fibers carry in-plane shear.' },
+  { name:'Angle-ply', code:'[±45]2s',
+    note:'Plus and minus forty-five plies carry shear through the fibers. This is the usual choice for torsion tubes and shear webs, at the cost of stiffness along the axis.' },
+  { name:'Quasi-isotropic', code:'[0/±45/90]s',
+    note:'Zero, plus and minus forty-five, and ninety. The polar plot becomes a circle, so in-plane stiffness is the same in every direction. This family is common for aircraft skins.' },
+  { name:'Unbalanced', code:'[30/0]2s',
+    note:'Thirty degree plies with no matching minus thirty plies. The laminate is symmetric, but A16 is not zero, so pulling it also makes it shear. The polar plot is tilted.' },
+  { name:'Unsymmetric', code:'[0/90]4',
+    note:'Zero and ninety plies stacked without a mirror plane. The B matrix is no longer zero, so stretching couples to bending, and flat panels of this layup warp as they cool after cure.' },
+];
+
+// ---------- colours ----------
+const ANCH = [[-90,0x3b82c4],[-45,0x4fa56b],[0,0xd9534f],[45,0xe8a33d],[90,0x3b82c4]];
+function angleColor(a){
+  for (let i=0;i<ANCH.length-1;i++){
+    const [a0,c0]=ANCH[i],[a1,c1]=ANCH[i+1];
+    if (a>=a0 && a<=a1){ const t=(a-a0)/(a1-a0); return new THREE.Color(c0).lerp(new THREE.Color(c1), t); }
+  }
+  return new THREE.Color(0x888888);
+}
+
+// ---------- state ----------
+const state = { angles:[], code:'', name:'Custom', note:'', presetIndex:3, material:'carbon', explode:0.7, res:null };
+
+// ---------- three setup ----------
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0x000000, 0);
+renderer.xr.enabled = true;
+stage.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 50);
+camera.position.set(0.32, 0.32, 0.52);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0.04, 0, 0);
+controls.enableDamping = true; controls.minDistance = 0.2; controls.maxDistance = 2.5;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445544, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(0.5, 1, 0.8); scene.add(sun);
+
+const root = new THREE.Group(); scene.add(root);
+let content = new THREE.Group(); root.add(content);
+
+function resize(){
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h || renderer.xr.isPresenting) return;
+  renderer.setSize(w, h, false); camera.aspect = w/h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+// ---------- builders ----------
+function textSprite(text, hMeters, color='#ffffff', bg=null){
+  const c = document.createElement('canvas'), ctx = c.getContext('2d');
+  const fs = 64; ctx.font = `600 ${fs}px Barlow, system-ui, sans-serif`;
+  const w = Math.ceil(ctx.measureText(text).width) + 28;
+  c.width = w; c.height = fs + 24;
+  ctx.font = `600 ${fs}px Barlow, system-ui, sans-serif`;
+  if (bg){ ctx.fillStyle = bg; ctx.beginPath(); ctx.roundRect(0,0,c.width,c.height,14); ctx.fill(); }
+  ctx.fillStyle = color; ctx.textBaseline = 'middle'; ctx.fillText(text, 14, c.height/2 + 2);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, depthTest:false, transparent:true }));
+  sp.scale.set(hMeters*c.width/c.height, hMeters, 1); sp.renderOrder = 10;
+  return sp;
+}
+
+function fiberGeometry(angleDeg, half, y, spacing=0.008, width=0.0011){
+  const r = angleDeg*Math.PI/180, d = [Math.cos(r), Math.sin(r)], n = [-d[1], d[0]];
+  const pos = [], R = half*Math.SQRT2;
+  for (let o=-R + spacing/2; o<=R; o+=spacing){
+    const p = [o*n[0], o*n[1]];
+    let t0=-Infinity, t1=Infinity;
+    for (let k=0;k<2;k++){
+      if (Math.abs(d[k])<1e-9){ if (Math.abs(p[k])>half){ t0=1; t1=0; } continue; }
+      let a=(-half-p[k])/d[k], b=(half-p[k])/d[k]; if (a>b)[a,b]=[b,a];
+      t0=Math.max(t0,a); t1=Math.min(t1,b);
+    }
+    if (t1 - t0 < 1e-4) continue;
+    const A=[p[0]+t0*d[0], p[1]+t0*d[1]], B=[p[0]+t1*d[0], p[1]+t1*d[1]];
+    const w=width/2, off=[n[0]*w, n[1]*w];
+    const q = [[A[0]-off[0],A[1]-off[1]],[A[0]+off[0],A[1]+off[1]],[B[0]+off[0],B[1]+off[1]],[B[0]-off[0],B[1]-off[1]]]
+      .map(v=>[Math.max(-half,Math.min(half,v[0])), Math.max(-half,Math.min(half,v[1]))]);
+    // laminate (x,y) -> world (x, y_up, -y)
+    const P = q.map(v=>[v[0], y, -v[1]]);
+    pos.push(...P[0],...P[1],...P[2], ...P[0],...P[2],...P[3]);
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  return g;
+}
+
+function drawPanel(res){
+  const W=1024, H=900, c=document.createElement('canvas'); c.width=W; c.height=H;
+  const x=c.getContext('2d');
+  x.fillStyle='#f3f5f2'; x.beginPath(); x.roundRect(0,0,W,H,28); x.fill();
+  x.fillStyle='#c2412d'; x.fillRect(0,40,10,86);
+  x.fillStyle='#1c2420'; x.font='600 64px "Barlow Condensed", Barlow, sans-serif';
+  x.fillText(state.name, 44, 100);
+  x.fillStyle='#56615b'; x.font='500 36px Barlow, sans-serif';
+  const idx = state.presetIndex>=0 ? `${state.presetIndex+1} of ${PRESETS.length}` : 'custom';
+  x.fillText(`${state.code}   ${MATERIALS[state.material].label}   ${idx}`, 44, 156);
+  const rows = [['Ex', res.Ex.toFixed(1)+' GPa'],['Ey', res.Ey.toFixed(1)+' GPa'],['Gxy', res.Gxy.toFixed(1)+' GPa'],
+                ['νxy', res.vxy.toFixed(3)],['Thickness', res.h.toFixed(3)+' mm, '+res.n+' plies']];
+  let y=230; x.font='500 40px Barlow, sans-serif';
+  for (const [k,v] of rows){
+    x.fillStyle='#56615b'; x.fillText(k, 44, y);
+    x.fillStyle='#1c2420'; x.textAlign='right'; x.fillText(v, W-44, y); x.textAlign='left';
+    x.fillStyle='#cfd6d1'; x.fillRect(44, y+16, W-88, 2); y+=64;
+  }
+  y+=14; x.font='500 34px Barlow, sans-serif';
+  const flags = [
+    [res.symmetric, res.symmetric ? 'Symmetric, so B = 0' : 'Unsymmetric: stretching couples to bending'],
+    [res.balanced, res.balanced ? 'Balanced, so A16 = A26 = 0' : 'Unbalanced: pulling it also shears it'],
+  ];
+  for (const [ok,t] of flags){
+    x.fillStyle = ok ? '#2f5d50' : '#c2412d'; x.fillRect(44, y-28, 8, 36);
+    x.fillStyle='#1c2420'; x.fillText(t, 70, y); y+=54;
+  }
+  x.fillStyle='#56615b'; x.font='400 29px Barlow, sans-serif';
+  const hint = ['Type a layup on the keyboard below with your fingertip, then press Build.',
+                'Pinch the laminate to move it. Both hands: scale and turn.',
+                'Pinch away from it: right hand next, left hand previous.',
+                'Both hands pinch away together: bring everything back in front.'];
+  y = H - 156; for (const l of hint){ x.fillText(l, 44, y); y+=38; }
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  return tex;
+}
+
+function build(){
+  const mat = MATERIALS[state.material], angles = state.angles, n = angles.length;
+  const res = analyse(mat, angles); state.res = res;
+
+  content.traverse(o=>{ if (o.geometry) o.geometry.dispose(); if (o.material){ if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
+  root.remove(content); content = new THREE.Group(); root.add(content);
+
+  const half = 0.08, maxH = 0.2;
+  const pitch = Math.min(0.0045 + state.explode*0.018, Math.max(maxH/n, 0.0045));
+  const thick = Math.min(0.0035, pitch*0.8);
+  const top = (n-1)/2*pitch;
+  const showLabels = pitch >= 0.009;
+
+  for (let i=0;i<n;i++){
+    const a = angles[i], y = top - i*pitch, col = angleColor(a);
+    const ply = new THREE.Mesh(new THREE.BoxGeometry(half*2, thick, half*2),
+      new THREE.MeshStandardMaterial({ color:col, roughness:0.55, metalness:0.05, transparent:true, opacity:0.92 }));
+    ply.position.y = y; content.add(ply);
+    const fm = new THREE.MeshBasicMaterial({ color:col.clone().multiplyScalar(0.45), side:THREE.DoubleSide,
+      polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2 });
+    content.add(new THREE.Mesh(fiberGeometry(a, half, y + thick/2 + 0.0002), fm));
+    if (showLabels){
+      const lab = textSprite((a>0?'+':'')+a+'°', Math.min(0.012, pitch*0.9), '#ffffff', 'rgba(28,36,32,0.72)');
+      lab.position.set(-half-0.022, y, 0); content.add(lab);
+    }
+  }
+
+  // polar plot of Ex(phi)
+  const R = 0.1, yP = top - (n-1)*pitch - thick/2 - 0.03;
+  const pol = polarEx(mat, angles), Emax = mat.E1;
+  const polar = new THREE.Group(); polar.position.y = yP; polar.rotation.x = -Math.PI/2; content.add(polar);
+  const shape = new THREE.Shape();
+  pol.forEach((p,i)=>{ const r=R*p.E/Emax, t=p.phi*Math.PI/180, px=r*Math.cos(t), py=r*Math.sin(t); i?shape.lineTo(px,py):shape.moveTo(px,py); });
+  polar.add(new THREE.Mesh(new THREE.ShapeGeometry(shape),
+    new THREE.MeshBasicMaterial({ color:0xc2412d, transparent:true, opacity:0.55, side:THREE.DoubleSide, depthWrite:false })));
+  const outline = new THREE.BufferGeometry().setFromPoints(pol.map(p=>{ const r=R*p.E/Emax, t=p.phi*Math.PI/180; return new THREE.Vector3(r*Math.cos(t), r*Math.sin(t), 0.0005); }));
+  polar.add(new THREE.LineLoop(outline, new THREE.LineBasicMaterial({ color:0xffd9cf })));
+  for (const f of [0.25,0.5,0.75,1]){
+    const pts=[]; for (let k=0;k<=96;k++){ const t=k/96*Math.PI*2; pts.push(new THREE.Vector3(R*f*Math.cos(t), R*f*Math.sin(t), 0)); }
+    polar.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({ color:0xffffff, transparent:true, opacity: f===1?0.7:0.3 })));
+  }
+  polar.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-R,0,0), new THREE.Vector3(R,0,0), new THREE.Vector3(0,-R,0), new THREE.Vector3(0,R,0)]),
+    new THREE.LineBasicMaterial({ color:0xffffff, transparent:true, opacity:0.4 })));
+  const l0 = textSprite('0°', 0.011, '#ffffff', 'rgba(28,36,32,0.72)'); l0.position.set(R+0.016, yP, 0); content.add(l0);
+  const l90 = textSprite('90°', 0.011, '#ffffff', 'rgba(28,36,32,0.72)'); l90.position.set(0, yP, -R-0.014); content.add(l90);
+  const lE = textSprite(`outer ring = E1 = ${mat.E1} GPa`, 0.009, '#ffffff', 'rgba(28,36,32,0.72)');
+  lE.position.set(0, yP, R+0.016); content.add(lE);
+
+  // info panel
+  const panel = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.2*900/1024),
+    new THREE.MeshBasicMaterial({ map:drawPanel(res), transparent:true, side:THREE.DoubleSide }));
+  panel.position.set(half + 0.13, 0.01, 0); panel.rotation.y = -0.35; content.add(panel);
+
+  updateDom(res);
+}
+
+// ---------- DOM ----------
+const $ = id => document.getElementById(id);
+const fmt = (v,d=2) => (Math.abs(v) < 5e-10 ? 0 : v).toFixed(d);
+function matTable(M, cap, d){
+  return `<table class="mat3"><caption>${cap}</caption>${M.map(r=>`<tr>${r.map(v=>`<td>${fmt(v,d)}</td>`).join('')}</tr>`).join('')}</table>`;
+}
+function updateDom(res){
+  $('props').innerHTML = [
+    ['Ex, along 0°', res.Ex.toFixed(2)+' GPa'], ['Ey, along 90°', res.Ey.toFixed(2)+' GPa'],
+    ['Gxy', res.Gxy.toFixed(2)+' GPa'], ['νxy', res.vxy.toFixed(3)],
+    ['Thickness', `${res.h.toFixed(3)} mm (${res.n} plies)`]
+  ].map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('');
+  $('flags').innerHTML =
+    `<p class="flag ${res.symmetric?'':'warn'}">${res.symmetric ? 'Symmetric about the mid-plane, so B is zero.' : 'Unsymmetric: B is non-zero, so in-plane loads cause bending and twisting, and the panel will warp after cure.'}</p>` +
+    `<p class="flag ${res.balanced?'':'warn'}">${res.balanced ? 'Balanced: A16 and A26 are zero, so no shear–extension coupling.' : 'Unbalanced: A16 or A26 is non-zero, so axial load also produces shear strain.'}</p>`;
+  $('abd').innerHTML = matTable(res.A,'A',2) + matTable(res.B,'B',4) + matTable(res.D,'D',4);
+  document.querySelectorAll('#presets button').forEach((b,i)=>b.setAttribute('aria-pressed', String(i===state.presetIndex)));
+}
+
+// ---------- narration (with Quest AR pause fix from the TPMS gallery) ----------
+const synth = window.speechSynthesis;
+let userGestured = false;
+function speak(text){
+  if (!synth || !$('narrate').checked || !userGestured) return;
+  try { synth.cancel(); synth.resume(); const u = new SpeechSynthesisUtterance(text); u.rate = 1.0; synth.speak(u); } catch(e){}
+}
+if (synth) setInterval(()=>{ try{ synth.resume(); }catch(e){} }, 4000);
+function narrationFor(){
+  const r = state.res;
+  return `${state.name}. ${state.note} Ex is ${r.Ex.toFixed(0)} gigapascals and Ey is ${r.Ey.toFixed(0)}.`;
+}
+
+// ---------- applying layups ----------
+function applyLayup(code, presetIndex=-1, say=true){
+  let angles;
+  try { angles = parseLayup(code); $('err').textContent = ''; }
+  catch(e){ $('err').textContent = e.message; return e.message; }
+  state.angles = angles; state.code = code; state.presetIndex = presetIndex;
+  if (presetIndex >= 0){ state.name = PRESETS[presetIndex].name; state.note = PRESETS[presetIndex].note; }
+  else {
+    state.name = 'Custom laminate';
+    const r = analyse(MATERIALS[state.material], angles);
+    state.note = `${angles.length} plies, ${r.symmetric?'symmetric':'unsymmetric'} and ${r.balanced?'balanced':'unbalanced'}.`;
+  }
+  $('layup').value = code;
+  build();
+  if (typeof kbSync === 'function') kbSync(code);
+  if (say) speak(narrationFor());
+  return true;
+}
+function stepPreset(dir){
+  const i = state.presetIndex < 0 ? 0 : (state.presetIndex + dir + PRESETS.length) % PRESETS.length;
+  applyLayup(PRESETS[i].code, i);
+}
+
+PRESETS.forEach((p,i)=>{
+  const b = document.createElement('button'); b.type='button';
+  b.innerHTML = `${p.name}<small>${p.code}</small>`;
+  b.addEventListener('click', ()=>applyLayup(p.code, i));
+  $('presets').appendChild(b);
+});
+for (const [k,m] of Object.entries(MATERIALS)){
+  const o = document.createElement('option'); o.value=k; o.textContent=`${m.label}: E1 ${m.E1}, E2 ${m.E2}, G12 ${m.G12} GPa`; $('material').appendChild(o);
+}
+$('material').addEventListener('change', e=>{ state.material = e.target.value; build(); });
+$('explode').addEventListener('input', e=>{ state.explode = parseFloat(e.target.value); build(); });
+$('buildBtn').addEventListener('click', ()=>{
+  const code = $('layup').value.trim();
+  const i = PRESETS.findIndex(p=>p.code.replace(/\s/g,'')===code.replace(/\s/g,''));
+  applyLayup(code, i);
+});
+$('layup').addEventListener('keydown', e=>{ if (e.key==='Enter') $('buildBtn').click(); });
+['pointerdown','keydown'].forEach(ev=>window.addEventListener(ev, ()=>{ userGestured = true; }, { once:false, passive:true }));
+
+// ---------- WebXR AR ----------
+let xrSession = null, placeFrames = 0;
+const arBtn = $('arBtn');
+async function initAR(){
+  if (!navigator.xr){ arBtn.textContent = 'AR needs a WebXR headset browser'; return; }
+  let ok = false; try { ok = await navigator.xr.isSessionSupported('immersive-ar'); } catch(e){}
+  if (!ok){ arBtn.textContent = 'AR is not available in this browser'; return; }
+  arBtn.disabled = false; arBtn.textContent = 'Enter AR'; arBtn.classList.add('primary');
+  arBtn.addEventListener('click', async ()=>{
+    if (xrSession){ xrSession.end(); return; }
+    try {
+      const session = await navigator.xr.requestSession('immersive-ar', {
+        optionalFeatures:['local-floor','hand-tracking','dom-overlay'], domOverlay:{ root:document.body } });
+      xrSession = session;
+      renderer.xr.setReferenceSpaceType('local-floor');
+      try { await renderer.xr.setSession(session); }
+      catch(e){ renderer.xr.setReferenceSpaceType('local'); await renderer.xr.setSession(session); }
+      document.body.classList.add('ar-mode'); arBtn.textContent = 'Exit AR';
+      root.scale.setScalar(1); placeFrames = 3;
+      kbSync(state.code); setKeyboardOpen(true); kbd.visible = true;
+      try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch(e){}
+      try { synth && synth.resume(); } catch(e){}
+      userGestured = true; speak(narrationFor());
+      session.addEventListener('end', ()=>{
+        xrSession = null; kbd.visible = false; document.body.classList.remove('ar-mode'); arBtn.textContent = 'Enter AR';
+        root.position.set(0,0,0); root.rotation.set(0,0,0); root.scale.setScalar(1); resize();
+      });
+    } catch(e){ $('err').textContent = 'Could not start AR: ' + e.message; }
+  });
+}
+initAR();
+
+const _cp = new THREE.Vector3(), _fw = new THREE.Vector3();
+function placeInFront(){
+  const cam = renderer.xr.getCamera();
+  cam.getWorldPosition(_cp); cam.getWorldDirection(_fw);
+  _fw.y = 0; if (_fw.lengthSq() < 1e-6) _fw.set(0,0,-1); _fw.normalize();
+  root.position.copy(_cp).addScaledVector(_fw, 0.5); root.position.y = _cp.y - 0.15;
+  root.rotation.set(0, Math.atan2(-_fw.x, -_fw.z), 0);
+  kbd.position.copy(_cp).addScaledVector(_fw, 0.34); kbd.position.y = _cp.y - 0.4;
+  kbd.rotation.set(-0.6, Math.atan2(-_fw.x, -_fw.z), 0, 'YXZ');
+}
+
+// ---------- AR keyboard: press keys with the index fingertip ----------
+const kbd = new THREE.Group(); kbd.visible = false; scene.add(kbd);
+const KU = 0.046, KG = 0.005, KW = 6*KU + 5*KG;
+const kb = { buffer:'', msg:'Press Build to apply', err:false, open:true, keys:[], display:null, lastPress:0 };
+let audioCtx = null;
+function click(){
+  if (!audioCtx) return;
+  try {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.frequency.value = 1400; g.gain.setValueAtTime(0.08, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.05);
+    o.connect(g).connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + 0.06);
+  } catch(e){}
+}
+function labelTexture(text, w, h, fg, bg, size=0.5){
+  const c = document.createElement('canvas'); c.height = 128; c.width = Math.round(128*w/h);
+  const x = c.getContext('2d');
+  x.fillStyle = bg; x.beginPath(); x.roundRect(0,0,c.width,c.height,18); x.fill();
+  x.fillStyle = fg; x.font = `600 ${Math.round(128*size)}px Barlow, system-ui, sans-serif`;
+  x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, c.width/2, c.height/2 + 3);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const KEY_STYLE = {
+  char:   { fg:'#1c2420', bg:'#f3f5f2' },
+  edit:   { fg:'#f3f5f2', bg:'#56615b' },
+  go:     { fg:'#ffffff', bg:'#c2412d' },
+  util:   { fg:'#f3f5f2', bg:'#2f5d50' },
+};
+function makeKey(label, x, y, w, h, action, style='char', size=0.5){
+  const st = KEY_STYLE[style];
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
+    new THREE.MeshBasicMaterial({ map:labelTexture(label, w, h, st.fg, st.bg, size), transparent:true }));
+  mesh.position.set(x, y, 0.004); kbd.add(mesh);
+  const key = { mesh, label, action, style, rect:{ x0:x-w/2, x1:x+w/2, y0:y-h/2, y1:y+h/2 } };
+  kb.keys.push(key); return key;
+}
+function colX(c, span=1){ return -KW/2 + c*(KU+KG) + (span*KU + (span-1)*KG)/2; }
+function spanW(span){ return span*KU + (span-1)*KG; }
+function buildKeyboard(){
+  // backing plate
+  const plate = new THREE.Mesh(new THREE.PlaneGeometry(KW + 0.024, 0.34),
+    new THREE.MeshBasicMaterial({ color:0x1c2420, transparent:true, opacity:0.78 }));
+  plate.position.set(0, -0.012, 0); kbd.add(plate); kb.plate = plate;
+  // display
+  const disp = new THREE.Mesh(new THREE.PlaneGeometry(KW, 0.05), new THREE.MeshBasicMaterial({ transparent:true }));
+  disp.position.set(0, 0.13, 0.004); kbd.add(disp); kb.display = disp;
+  const rows = [
+    [['7'],['8'],['9'],['['],[']'],['Del','del','edit']],
+    [['4'],['5'],['6'],['/'],['±'],['Clear','clear','edit']],
+    [['1'],['2'],['3'],['-'],['_'],['s']],
+  ];
+  const ys = [0.075, 0.024, -0.027];
+  rows.forEach((row, r)=>row.forEach(([lab, act, st], c)=>{
+    makeKey(lab, colX(c), ys[r], KU, KU, act || ('ch:' + lab), st || 'char', lab.length > 2 ? 0.34 : 0.52);
+  }));
+  makeKey('0', colX(0), -0.078, KU, KU, 'ch:0');
+  makeKey(',', colX(1), -0.078, KU, KU, 'ch:,');
+  makeKey('.', colX(2), -0.078, KU, KU, 'ch:.');
+  makeKey('Build', colX(3,3), -0.078, spanW(3), KU, 'build', 'go', 0.42);
+  const uw = (KW - 3*KG)/4, uy = -0.129, uh = 0.036;
+  ['Material','Spacing −','Spacing +','Hide'].forEach((lab, i)=>{
+    const x = -KW/2 + i*(uw+KG) + uw/2;
+    const k = makeKey(lab, x, uy, uw, uh, ['mat','sp-','sp+','toggle'][i], 'util', 0.36);
+    if (lab === 'Hide') kb.toggleKey = k;
+  });
+  drawDisplay();
+}
+function drawDisplay(){
+  const c = document.createElement('canvas'); c.width = 1200; c.height = 200;
+  const x = c.getContext('2d');
+  x.fillStyle = '#ffffff'; x.beginPath(); x.roundRect(0,0,c.width,c.height,20); x.fill();
+  x.fillStyle = '#1c2420'; x.font = '600 84px Barlow, system-ui, sans-serif'; x.textBaseline = 'middle';
+  const text = kb.buffer + '|';
+  let tw = x.measureText(text).width, sx = 28;
+  if (tw > c.width - 56) sx = c.width - 28 - tw;
+  x.fillText(text, sx, 72);
+  x.fillStyle = kb.err ? '#c2412d' : '#56615b'; x.font = '500 40px Barlow, system-ui, sans-serif';
+  let msg = kb.msg; while (x.measureText(msg).width > c.width - 56 && msg.length > 4) msg = msg.slice(0,-2);
+  x.fillText(msg, 28, 158);
+  const old = kb.display.material.map; kb.display.material.map = new THREE.CanvasTexture(c);
+  kb.display.material.map.colorSpace = THREE.SRGBColorSpace; kb.display.material.needsUpdate = true;
+  if (old) old.dispose();
+}
+function kbSync(code){ if (!kb.display) return; kb.buffer = code; kb.msg = 'Press Build to apply'; kb.err = false; drawDisplay(); }
+function setKeyboardOpen(open){
+  kb.open = open;
+  kb.keys.forEach(k=>{ if (k !== kb.toggleKey) k.mesh.visible = open; });
+  kb.display.visible = open; kb.plate.visible = open;
+  kb.toggleKey.mesh.material.map.dispose();
+  kb.toggleKey.mesh.material.map = labelTexture(open ? 'Hide' : 'Keyboard', spanW(1.5), 0.036, '#f3f5f2', '#2f5d50', 0.36);
+  kb.toggleKey.mesh.material.needsUpdate = true;
+}
+function pressKey(k){
+  const a = k.action;
+  if (a.startsWith('ch:')){ if (kb.buffer.length < 60) kb.buffer += a.slice(3); kb.msg = 'Press Build to apply'; kb.err = false; }
+  else if (a === 'del'){ kb.buffer = kb.buffer.slice(0,-1); kb.err = false; }
+  else if (a === 'clear'){ kb.buffer = ''; kb.msg = 'Type a layup, for example [0/±45/90]s'; kb.err = false; }
+  else if (a === 'build'){
+    const code = kb.buffer.trim();
+    const i = PRESETS.findIndex(p=>p.code === code);
+    const r = applyLayup(code, i);
+    if (r === true){ kb.msg = `Built: ${state.angles.length} plies`; kb.err = false; }
+    else { kb.msg = r; kb.err = true; }
+  }
+  else if (a === 'mat'){
+    const ks = Object.keys(MATERIALS); state.material = ks[(ks.indexOf(state.material)+1) % ks.length];
+    $('material').value = state.material; build();
+    kb.msg = MATERIALS[state.material].label; kb.err = false;
+  }
+  else if (a === 'sp-' || a === 'sp+'){
+    state.explode = THREE.MathUtils.clamp(state.explode + (a === 'sp+' ? 0.15 : -0.15), 0, 1);
+    $('explode').value = state.explode; build();
+  }
+  else if (a === 'toggle'){ setKeyboardOpen(!kb.open); }
+  if (kb.open) drawDisplay();
+  click();
+  k.mesh.position.z = 0.0005; setTimeout(()=>{ k.mesh.position.z = 0.004; }, 120);
+}
+const _tip = new THREE.Vector3(), _loc = new THREE.Vector3();
+const pokers = [{ key:null, armed:true }, { key:null, armed:true }];
+function updateKeyboard(now){
+  if (!kbd.visible) return;
+  kbd.updateMatrixWorld();
+  hands.forEach((s, i)=>{
+    const p = pokers[i];
+    if (!jointPos(s.h, 'index-finger-tip', _tip)){ p.armed = true; p.key = null; return; }
+    _loc.copy(_tip); kbd.worldToLocal(_loc);
+    let hit = null;
+    if (_loc.z < 0.012 && _loc.z > -0.03){
+      for (const k of kb.keys){
+        if (!k.mesh.visible) continue;
+        const r = k.rect;
+        if (_loc.x >= r.x0 && _loc.x <= r.x1 && _loc.y >= r.y0 && _loc.y <= r.y1){ hit = k; break; }
+      }
+    }
+    if (hit && p.armed && now - kb.lastPress > 150){ pressKey(hit); kb.lastPress = now; p.armed = false; p.key = hit; }
+    if (!hit || _loc.z > 0.028){ p.armed = true; p.key = null; }
+  });
+}
+function nearKeyboard(pt){
+  if (!kbd.visible) return false;
+  _loc.copy(pt); kbd.worldToLocal(_loc);
+  return Math.abs(_loc.x) < KW/2 + 0.04 && _loc.y > -0.2 && _loc.y < 0.2 && _loc.z < 0.1 && _loc.z > -0.06;
+}
+
+// hands: same gesture grammar as the TPMS gallery
+const hands = [0,1].map(i=>{
+  const h = renderer.xr.getHand(i); scene.add(h);
+  h.addEventListener('connected', e=>{ h.userData.handedness = e.data.handedness; });
+  h.addEventListener('disconnected', ()=>{ h.userData.handedness = null; });
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.006, 12, 8), new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.6 }));
+  dot.visible = false; scene.add(dot);
+  return { h, dot, pinch:false, start:0, mode:null, combo:false, pt:new THREE.Vector3() };
+});
+const _t = new THREE.Vector3(), _i = new THREE.Vector3(), _box = new THREE.Box3();
+let two = null, single = null;
+function jointPos(h, name, out){ const j = h.joints && h.joints[name]; if (!j || !j.visible) return false; j.getWorldPosition(out); return true; }
+function nearModel(p){ _box.setFromObject(content).expandByScalar(0.03); return _box.containsPoint(p); }
+function releaseHand(s, now){
+  s.pinch = false; s.dot.material.color.set(0xffffff);
+  if (s.mode === 'away' && !s.combo && now - s.start < 900) stepPreset(s.h.userData.handedness === 'left' ? -1 : 1);
+  s.mode = null;
+}
+function updateHands(now){
+  for (const s of hands){
+    const ok = jointPos(s.h, 'thumb-tip', _t) && jointPos(s.h, 'index-finger-tip', _i);
+    if (!ok){ s.dot.visible = false; if (s.pinch) releaseHand(s, now); continue; }
+    s.pt.copy(_t).add(_i).multiplyScalar(0.5); s.dot.position.copy(s.pt); s.dot.visible = true;
+    const d = _t.distanceTo(_i);
+    if (!s.pinch && d < 0.018){
+      s.pinch = true; s.start = now; s.combo = false;
+      s.mode = nearKeyboard(s.pt) ? 'kbd' : nearModel(s.pt) ? 'grab' : 'away';
+      s.dot.material.color.set(s.mode === 'grab' ? 0xe8a33d : s.mode === 'kbd' ? 0xffffff : 0x6fb0e8);
+    } else if (s.pinch && d > 0.035) releaseHand(s, now);
+  }
+  const away = hands.filter(s=>s.pinch && s.mode==='away');
+  if (away.length === 2 && !away[0].combo){ away.forEach(s=>s.combo=true); placeInFront(); }
+
+  const g = hands.filter(s=>s.pinch && s.mode==='grab');
+  if (g.length === 2){
+    single = null;
+    const [a,b] = g, dist = a.pt.distanceTo(b.pt), mid = a.pt.clone().add(b.pt).multiplyScalar(0.5);
+    const ang = Math.atan2(-(b.pt.z-a.pt.z), b.pt.x-a.pt.x);
+    if (!two) two = { d0:dist, s0:root.scale.x, a0:ang, r0:root.rotation.y, m0:mid, p0:root.position.clone() };
+    else {
+      root.scale.setScalar(THREE.MathUtils.clamp(two.s0*dist/two.d0, 0.3, 4));
+      root.rotation.y = two.r0 + (ang - two.a0);
+      root.position.copy(two.p0).add(mid.sub(two.m0));
+    }
+  } else if (g.length === 1){
+    two = null;
+    if (!single || single.s !== g[0]) single = { s:g[0], off:root.position.clone().sub(g[0].pt) };
+    else root.position.copy(g[0].pt).add(single.off);
+  } else { two = null; single = null; }
+}
+
+renderer.setAnimationLoop((time)=>{
+  if (renderer.xr.isPresenting){
+    if (placeFrames > 0 && --placeFrames === 0) placeInFront();
+    updateHands(time);
+    updateKeyboard(time);
+  } else controls.update();
+  renderer.render(scene, camera);
+});
+
+buildKeyboard();
+applyLayup(PRESETS[3].code, 3, false);
+resize();
+</script>
+</body>
+</html>
